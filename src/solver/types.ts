@@ -1,30 +1,39 @@
+/**
+ * 录入数值：可为数值或十进制文本。
+ *
+ * 文本形式原样保留录入的全部有效数字（例如整数部分超过 2^53 的
+ * "2500000000000000.025"），求解时按精确十进制参与运算；数值形式经
+ * 最短往返十进制表示解析。安全边界判定全程使用精确十进制。
+ */
+export type NumericInput = number | string;
+
 /** 导轨位置：配重可挂入的物理位置，coordinate 为相对卷扬轴中心的力臂（左负右正）。 */
 export interface RailPosition {
   id: string;
   name: string;
-  coordinate: number;
+  coordinate: NumericInput;
 }
 
 /** 某块配重的一个可挂入选项：挂到指定导轨位置的安装代价。 */
 export interface BlockOptionInput {
   railId: string;
-  cost: number;
+  cost: NumericInput;
 }
 
 /** 一块幕布配重。 */
 export interface BlockInput {
   id: string;
   name: string;
-  mass: number;
+  mass: NumericInput;
   /** 可挂入的 2~3 个导轨位置，数组顺序即“位置录入序号”。 */
   options: BlockOptionInput[];
 }
 
 /** 卷扬轴限制：总载荷上限与左右力矩闭区间。 */
 export interface Limits {
-  maxLoad: number;
-  minTorque: number;
-  maxTorque: number;
+  maxLoad: NumericInput;
+  minTorque: NumericInput;
+  maxTorque: NumericInput;
 }
 
 export interface Scenario {

@@ -56,16 +56,22 @@ export function defaultDraft(): Draft {
 
 export type ParseResult = { scenario: Scenario } | { errors: string[] };
 
+/** 普通十进制字面量（含科学计数法）：按原文传递以保留全部有效数字。 */
+const DECIMAL_LITERAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
 /** 把草稿解析为求解输入；数值非法或违反录入约束时返回全部错误。 */
 export function parseDraft(d: Draft): ParseResult {
   const errors: string[] = [];
-  const num = (raw: string, label: string): number => {
+  const num = (raw: string, label: string): number | string => {
     const v = Number(raw);
     if (raw.trim() === '' || !Number.isFinite(v)) {
       errors.push(`${label}须为数值`);
       return NaN;
     }
-    return v;
+    // 十进制字面量按录入原文传递（如 "2500000000000000.025"），求解按精确十进制
+    // 运算，整数部分超过 2^53 时小数部分也不丢失；其他写法（如 0x10）折算为数值。
+    const t = raw.trim();
+    return DECIMAL_LITERAL.test(t) ? t : v;
   };
 
   const scenario: Scenario = {

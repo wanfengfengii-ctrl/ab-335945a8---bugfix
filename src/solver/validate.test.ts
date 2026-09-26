@@ -78,4 +78,19 @@ describe('validateScenario', () => {
     expect(errors.some((e) => e.includes('名称不能为空'))).toBe(true);
     expect(errors.some((e) => e.includes('名称重复'))).toBe(true);
   });
+
+  it('力矩区间端点次序按精确十进制判定（超大整数部分的尾差不丢失）', () => {
+    // float64 下两端都舍入为 9007199254740992；按录入十进制值下端更大，须报错。
+    const s = validScenario();
+    s.limits.minTorque = '9007199254740993';
+    s.limits.maxTorque = '9007199254740992.5';
+    const errors = validateScenario(s);
+    expect(errors.some((e) => e.includes('下端不得大于上端'))).toBe(true);
+
+    // 次序正确时不应误报（包含超大整数部分）。
+    const ok = validScenario();
+    ok.limits.minTorque = '9007199254740992.5';
+    ok.limits.maxTorque = '9007199254740993';
+    expect(validateScenario(ok).some((e) => e.includes('下端不得大于上端'))).toBe(false);
+  });
 });

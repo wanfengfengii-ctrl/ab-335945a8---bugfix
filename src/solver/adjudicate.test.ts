@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { adjudicate, EPS } from './adjudicate';
 import type { Scenario } from './types';
 
-const rails = (...defs: [string, number][]): Scenario['rails'] =>
+const rails = (...defs: [string, number | string][]): Scenario['rails'] =>
   defs.map(([name, coordinate], i) => ({ id: `rail-${i}`, name, coordinate }));
 
 const block = (
   name: string,
-  mass: number,
+  mass: number | string,
   options: [number, number][], // [railIndex, cost]
 ): Scenario['blocks'][number] => ({
   id: `blk-${name}`,
@@ -16,7 +16,7 @@ const block = (
   options: options.map(([railIndex, cost]) => ({ railId: `rail-${railIndex}`, cost })),
 });
 
-const limits = (maxLoad: number, minTorque: number, maxTorque: number): Scenario['limits'] => ({
+const limits = (maxLoad: number | string, minTorque: number | string, maxTorque: number | string): Scenario['limits'] => ({
   maxLoad,
   minTorque,
   maxTorque,
@@ -247,6 +247,84 @@ describe('adjudicate · 无可行方案的诊断', () => {
     expect(outcome.plan.totalCost).toBeCloseTo(4);
     expect(outcome.plan.minTorqueMargin).toBeCloseTo(0);
     expect(outcome.plan.finalMass).toBeCloseTo(1);
+    expect(outcome.plan.steps[3].loadMargin).toBeCloseTo(0);
+  });
+
+  it('超大整数部分十进制载荷：真实超载 0.1 不得被 float64 舍入吞没', () => {
+    // 两条零力臂导轨、上限 10000000000000000、力矩 [0,0]；
+    // 4 块质量 2500000000000000.025（float64 会舍入为 2500000000000000）。
+    // 按录入十进制值总质量为 10000000000000000.1，真实超限 0.1，必须判无可行方案。
+    const outcome = adjudicate({
+      rails: rails(['M1', 0], ['M2', 0]),
+      blocks: [
+        block('b1', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b2', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b3', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b4', '2500000000000000.025', [[0, 1], [1, 1]]),
+      ],
+      limits: limits('10000000000000000', '0', '0'),
+    });
+    expect(outcome.feasible).toBe(false);
+    if (outcome.feasible) return;
+    // 前三块构成安全挂装前缀（7500000000000000.075 ≤ 上限，力矩恒为 0）。
+    expect(outcome.report.witnessPrefix).toHaveLength(3);
+    expect(outcome.report.witnessPrefix.map((s) => s.blockIndex)).toEqual([0, 1, 2]);
+    for (const s of outcome.report.witnessPrefix) {
+      expect(s.cumulativeTorque).toBe(0);
+      expect(s.loadMargin).toBeGreaterThanOrEqual(0);
+    }
+    // 第 4 块配重的两个导轨选择都应报告总载荷超限（且仅超限载荷）。
+    expect(outcome.report.violations).toHaveLength(2);
+    expect(outcome.report.violations.map((v) => [v.blockIndex, v.railName])).toEqual([
+      [3, 'M1'],
+      [3, 'M2'],
+    ]);
+    for (const v of outcome.report.violations) {
+      expect(v.kinds).toEqual(['load']);
+      expect(v.torqueAfter).toBe(0);
+    }
+  });
+
+  it('超大整数部分十进制力矩：质量 × 力臂的微小超出同样按精确十进制判定', () => {
+    // 质量 2500000000000000.025、力臂 ±0.001：挂后力矩为 ±2500000000000.000025，
+    // 在区间 [0,0] 外；第一步即无任何可行选择，须逐一报告力矩越界。
+    const outcome = adjudicate({
+      rails: rails(['L', '-0.001'], ['R', '0.001']),
+      blocks: [
+        block('b1', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b2', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b3', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b4', '2500000000000000.025', [[0, 1], [1, 1]]),
+      ],
+      limits: limits('10000000000000001', '0', '0'),
+    });
+    expect(outcome.feasible).toBe(false);
+    if (outcome.feasible) return;
+    expect(outcome.report.witnessPrefix).toHaveLength(0);
+    expect(outcome.report.violations).toHaveLength(8);
+    const kinds = new Map(outcome.report.violations.map((v) => [`${v.blockIndex}:${v.railName}`, v.kinds]));
+    for (let i = 0; i < 4; i++) {
+      expect(kinds.get(`${i}:L`)).toEqual(['torque-low']);
+      expect(kinds.get(`${i}:R`)).toEqual(['torque-high']);
+    }
+  });
+
+  it('超大整数部分载荷恰达上限：按录入十进制值恰好相等时仍判可行（边界不变）', () => {
+    // 4 块 2500000000000000（无小数尾差）总质量恰为上限，余量最后一步为 0。
+    const outcome = adjudicate({
+      rails: rails(['M1', 0], ['M2', 0]),
+      blocks: [
+        block('b1', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b2', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b3', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b4', '2500000000000000', [[0, 1], [1, 2]]),
+      ],
+      limits: limits('10000000000000000', '0', '0'),
+    });
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.steps).toHaveLength(4);
+    expect(outcome.plan.totalCost).toBeCloseTo(4);
     expect(outcome.plan.steps[3].loadMargin).toBeCloseTo(0);
   });
 });
