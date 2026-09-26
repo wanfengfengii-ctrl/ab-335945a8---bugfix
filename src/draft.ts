@@ -1,3 +1,4 @@
+import { parseDecimal } from './solver/decimal';
 import type { Scenario } from './solver/types';
 import { validateScenario } from './solver/validate';
 
@@ -59,13 +60,13 @@ export type ParseResult = { scenario: Scenario } | { errors: string[] };
 /** 把草稿解析为求解输入；数值非法或违反录入约束时返回全部错误。 */
 export function parseDraft(d: Draft): ParseResult {
   const errors: string[] = [];
-  const num = (raw: string, label: string): number => {
-    const v = Number(raw);
-    if (raw.trim() === '' || !Number.isFinite(v)) {
+  // 保留录入的十进制原文：求解器按原文精确计算，不因双精度舍入丢失小数部分
+  // （如 2500000000000000.025 经 Number 会变为 2500000000000000）。
+  const num = (raw: string, label: string): string => {
+    if (parseDecimal(raw) === null) {
       errors.push(`${label}须为数值`);
-      return NaN;
     }
-    return v;
+    return raw.trim();
   };
 
   const scenario: Scenario = {

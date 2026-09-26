@@ -109,6 +109,41 @@ if (!r3.feasible) {
   );
 }
 
+// 超大整数部分十进制场景：4 块 2500000000000000.025 按录入十进制值合计 10000000000000000.100
+// （整数部分已超出双精度表示范围），对上限 10000000000000000 真实超限 0.1，
+// 必须判无可行方案；前三块为安全前缀，第 4 块的两个导轨选择均报告总载荷超限。
+const hugeDecimalScenario: Scenario = {
+  rails: [
+    { id: 'M1', name: 'M1', coordinate: 0 },
+    { id: 'M2', name: 'M2', coordinate: 0 },
+  ],
+  blocks: [0, 1, 2, 3].map((i) => ({
+    id: `h${i}`,
+    name: `h${i}`,
+    mass: '2500000000000000.025',
+    options: [
+      { railId: 'M1', cost: 1 },
+      { railId: 'M2', cost: 1 },
+    ],
+  })),
+  limits: { maxLoad: '10000000000000000', minTorque: 0, maxTorque: 0 },
+};
+
+const r4 = adjudicate(hugeDecimalScenario);
+check(!r4.feasible, '裁决模块：超大十进制总质量 10000000000000000.100 对上限 1e16 应判定为不可行');
+if (!r4.feasible) {
+  check(
+    r4.report.witnessPrefix.length === 3 &&
+      r4.report.witnessPrefix.every((s) => s.cumulativeTorque === 0 && s.loadMargin >= 0),
+    '裁决模块：超大十进制场景的前三块应构成安全挂装前缀（长度 3）',
+  );
+  check(
+    r4.report.violations.length === 2 &&
+      r4.report.violations.every((v) => v.blockIndex === 3 && v.kinds.length === 1 && v.kinds[0] === 'load'),
+    '裁决模块：第 4 块的两个导轨选择均应报告总载荷超限',
+  );
+}
+
 // ---------- 2. 已启动页面健康端点冒烟 ----------
 
 const deadline = Date.now() + 60_000;

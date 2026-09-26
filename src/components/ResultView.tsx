@@ -86,7 +86,7 @@ function FeasibleView({ scenario, outcome }: { scenario: Scenario; outcome: Extr
         <div>
           <span className="k">最终已挂质量</span>
           <span className="v">
-            {fmt(plan.finalMass)}（余量 {fmt(scenario.limits.maxLoad - plan.finalMass)}）
+            {fmt(plan.finalMass)}（余量 {fmt(Number(scenario.limits.maxLoad) - plan.finalMass)}）
           </span>
         </div>
         <div>

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { adjudicate, EPS } from './adjudicate';
-import type { Scenario } from './types';
+import type { DecimalInput, Scenario } from './types';
 
 const rails = (...defs: [string, number][]): Scenario['rails'] =>
   defs.map(([name, coordinate], i) => ({ id: `rail-${i}`, name, coordinate }));
 
 const block = (
   name: string,
-  mass: number,
+  mass: DecimalInput,
   options: [number, number][], // [railIndex, cost]
 ): Scenario['blocks'][number] => ({
   id: `blk-${name}`,
@@ -16,7 +16,7 @@ const block = (
   options: options.map(([railIndex, cost]) => ({ railId: `rail-${railIndex}`, cost })),
 });
 
-const limits = (maxLoad: number, minTorque: number, maxTorque: number): Scenario['limits'] => ({
+const limits = (maxLoad: DecimalInput, minTorque: DecimalInput, maxTorque: DecimalInput): Scenario['limits'] => ({
   maxLoad,
   minTorque,
   maxTorque,
@@ -248,5 +248,69 @@ describe('adjudicate · 无可行方案的诊断', () => {
     expect(outcome.plan.minTorqueMargin).toBeCloseTo(0);
     expect(outcome.plan.finalMass).toBeCloseTo(1);
     expect(outcome.plan.steps[3].loadMargin).toBeCloseTo(0);
+  });
+
+  it('超大整数部分十进制载荷：总质量 10000000000000000.100 对上限 1e16 必须判无可行方案', () => {
+    // 两条零力臂导轨、力矩闭区间 [0,0]；每块质量 2500000000000000.025 的整数部分已超出
+    // 双精度可表示范围（Number 解析会丢去 .025），必须按录入的十进制原文精确求和：
+    // 4 块合计 10000000000000000.100，真实超限 0.1，不得被容差或舍入吞没。
+    const outcome = adjudicate({
+      rails: rails(['M1', 0], ['M2', 0]),
+      blocks: [
+        block('b1', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b2', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b3', '2500000000000000.025', [[0, 1], [1, 1]]),
+        block('b4', '2500000000000000.025', [[0, 1], [1, 1]]),
+      ],
+      limits: limits('10000000000000000', 0, 0),
+    });
+    expect(outcome.feasible).toBe(false);
+    if (outcome.feasible) return;
+    // 前三块仍构成安全挂装前缀：已挂质量 7500000000000000.075 ≤ 1e16，力矩恒为 0 ∈ [0,0]。
+    expect(outcome.report.witnessPrefix).toHaveLength(3);
+    expect(outcome.report.witnessPrefix.map((s) => [s.blockIndex, s.railName])).toEqual([
+      [0, 'M1'],
+      [1, 'M1'],
+      [2, 'M1'],
+    ]);
+    for (const s of outcome.report.witnessPrefix) {
+      expect(s.cumulativeTorque).toBe(0);
+      expect(s.loadMargin).toBeGreaterThanOrEqual(0);
+    }
+    // 第 4 步：第 4 块配重的两个导轨选择都应明确报告总载荷超限（且仅超限载荷）。
+    expect(outcome.report.violations).toHaveLength(2);
+    expect(outcome.report.violations.map((v) => [v.blockIndex, v.railName])).toEqual([
+      [3, 'M1'],
+      [3, 'M2'],
+    ]);
+    for (const v of outcome.report.violations) {
+      expect(v.kinds).toEqual(['load']);
+      expect(v.torqueAfter).toBe(0);
+    }
+  });
+
+  it('超大十进制载荷恰达上限：总质量恰好等于上限时仍判可行（边界判定不变）', () => {
+    // 4 块 2500000000000000 总质量恰为 1e16，最后一步载荷余量为 0，力矩恒在 [0,0] 上。
+    const outcome = adjudicate({
+      rails: rails(['M1', 0], ['M2', 0]),
+      blocks: [
+        block('b1', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b2', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b3', '2500000000000000', [[0, 1], [1, 2]]),
+        block('b4', '2500000000000000', [[0, 1], [1, 2]]),
+      ],
+      limits: limits('10000000000000000', 0, 0),
+    });
+    expect(outcome.feasible).toBe(true);
+    if (!outcome.feasible) return;
+    expect(outcome.plan.steps.map((s) => [s.blockIndex, s.railName])).toEqual([
+      [0, 'M1'],
+      [1, 'M1'],
+      [2, 'M1'],
+      [3, 'M1'],
+    ]);
+    expect(outcome.plan.totalCost).toBeCloseTo(4);
+    expect(outcome.plan.finalMass).toBe(10000000000000000);
+    expect(outcome.plan.steps[3].loadMargin).toBe(0);
   });
 });

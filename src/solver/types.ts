@@ -1,30 +1,37 @@
+/**
+ * 十进制数值录入：number，或录入的十进制原文（字符串，如 "2500000000000000.025"）。
+ * 裁决的安全边界判定按该十进制值精确计算；number 取其最短十进制表示，
+ * 字符串原文则完整保留，不因双精度舍入丢失小数部分。
+ */
+export type DecimalInput = number | string;
+
 /** 导轨位置：配重可挂入的物理位置，coordinate 为相对卷扬轴中心的力臂（左负右正）。 */
 export interface RailPosition {
   id: string;
   name: string;
-  coordinate: number;
+  coordinate: DecimalInput;
 }
 
 /** 某块配重的一个可挂入选项：挂到指定导轨位置的安装代价。 */
 export interface BlockOptionInput {
   railId: string;
-  cost: number;
+  cost: DecimalInput;
 }
 
 /** 一块幕布配重。 */
 export interface BlockInput {
   id: string;
   name: string;
-  mass: number;
+  mass: DecimalInput;
   /** 可挂入的 2~3 个导轨位置，数组顺序即“位置录入序号”。 */
   options: BlockOptionInput[];
 }
 
 /** 卷扬轴限制：总载荷上限与左右力矩闭区间。 */
 export interface Limits {
-  maxLoad: number;
-  minTorque: number;
-  maxTorque: number;
+  maxLoad: DecimalInput;
+  minTorque: DecimalInput;
+  maxTorque: DecimalInput;
 }
 
 export interface Scenario {
